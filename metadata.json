@@ -1,0 +1,6 @@
+{
+  "name": "Agora Savoirs",
+  "description": "L'Agora des Siècles : conversez de vive voix avec les penseurs fondateurs (Newton, Pythagore, Socrate, Marie Curie) à travers des salons vocaux interactifs, des sessions immersives et un codex de découvertes.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
