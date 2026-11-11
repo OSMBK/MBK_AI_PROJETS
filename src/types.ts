@@ -1,10 +1,11 @@
 export type ScreenType = 'pantheon' | 'salon-vocal' | 'session-immersive' | 'codex' | 'profil';
 
-export type ScholarId = 'newton' | 'pythagore' | 'socrate' | 'curie';
+export type ScholarId = 'newton' | 'pythagore' | 'socrate' | 'curie' | 'hypatie';
 
 export interface Scholar {
   id: ScholarId;
   name: string;
+  gender: 'male' | 'female';
   domain: string;
   domainCategory: 'physique' | 'maths' | 'philosophie' | 'chimie';
   badge: string;
@@ -15,6 +16,7 @@ export interface Scholar {
   quote: string;
   statusText: string;
   voiceStyle: string;
+  voiceGenderLabel: string;
   location: string;
   year: number | string;
   theoremName?: string;
@@ -43,6 +45,12 @@ export interface ChatMessage {
   };
   highlight?: string;
   referenceDoc?: string;
+  sources?: Array<{
+    title?: string;
+    uri?: string;
+  }>;
+  searchQueries?: string[];
+  modelUsed?: string;
 }
 
 export interface AudioMemo {

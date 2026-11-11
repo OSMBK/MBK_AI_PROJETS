@@ -258,13 +258,24 @@ export const PantheonView: React.FC<PantheonViewProps> = ({
           return (
             <article
               key={scholar.id}
-              className="scholar-card relative rounded-2xl bg-white p-4 shadow-[0_4px_16px_-2px_rgba(17,26,54,0.05)] border border-[#0B132B]/5 transition-all hover:shadow-md"
+              onClick={() => {
+                playHarmonicChime(440, 0.3);
+                onOpenSalon(scholar.id);
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  onOpenSalon(scholar.id);
+                }
+              }}
+              className="scholar-card group relative rounded-2xl bg-white p-4 sm:p-5 shadow-[0_4px_16px_-2px_rgba(17,26,54,0.06)] border border-[#0B132B]/8 hover:border-[#735c00]/40 hover:shadow-xl transition-all duration-300 cursor-pointer active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-[#735c00]/30"
             >
               <div className="flex items-start gap-3.5">
                 {/* Scholar Image with Status Pill */}
                 <div className="relative flex-shrink-0">
                   <img
-                    className="w-16 h-16 rounded-xl object-cover shadow-sm ring-1 ring-black/5"
+                    className="w-16 h-16 sm:w-18 sm:h-18 rounded-xl object-cover shadow-sm ring-2 ring-[#735c00]/20 group-hover:ring-[#735c00]/50 transition-all"
                     src={scholar.bustUrl}
                     alt={scholar.name}
                   />
@@ -274,7 +285,7 @@ export const PantheonView: React.FC<PantheonViewProps> = ({
                     </span>
                   )}
                   {scholar.id === 'pythagore' && (
-                    <span className="absolute -top-1 -left-1 px-1.5 py-0.5 rounded-full bg-[#111a36] text-[#dbe1ff] text-[9px] font-bold">
+                    <span className="absolute -top-1 -left-1 px-1.5 py-0.5 rounded-full bg-[#111a36] text-[#dbe1ff] text-[9px] font-bold shadow-xs">
                       HARMONIE
                     </span>
                   )}
@@ -288,49 +299,65 @@ export const PantheonView: React.FC<PantheonViewProps> = ({
                       <span className="material-symbols-outlined text-[11px] fill-1">science</span>
                     </span>
                   )}
+                  {scholar.id === 'hypatie' && (
+                    <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#111a36] text-[#ffe088] flex items-center justify-center shadow-sm">
+                      <span className="material-symbols-outlined text-[11px] fill-1">auto_awesome</span>
+                    </span>
+                  )}
                 </div>
 
                 {/* Scholar Meta & Content */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-1 mb-1">
-                    <span className="px-2 py-0.5 rounded bg-[#fed65b]/30 text-[#745c00] text-[10px] font-bold tracking-wider uppercase">
-                      {scholar.badge}
-                    </span>
+                  <div className="flex items-center justify-between gap-1 mb-1 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded bg-[#fed65b]/30 text-[#745c00] text-[10px] font-bold tracking-wider uppercase">
+                        {scholar.badge}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                          scholar.gender === 'female'
+                            ? 'bg-purple-100 text-purple-900 border border-purple-200'
+                            : 'bg-amber-100 text-amber-900 border border-amber-200'
+                        }`}
+                      >
+                        {scholar.gender === 'female' ? '♀ Voix Féminine' : '♂ Voix Masculine'}
+                      </span>
+                    </div>
                     <span className="text-[#76767e] text-[11px]">{scholar.epoch}</span>
                   </div>
 
-                  <h4 className="font-serif text-[18px] text-[#191c1d] font-semibold truncate leading-tight">
+                  <h4 className="font-serif text-[18px] sm:text-[20px] text-[#191c1d] group-hover:text-[#735c00] font-semibold truncate leading-tight transition-colors">
                     {scholar.name}
                   </h4>
 
-                  <p className="font-sans text-[12px] text-[#45464d] line-clamp-1 mb-2.5 leading-relaxed">
+                  <p className="font-sans text-[12px] sm:text-[13px] text-[#45464d] line-clamp-1 mb-1 leading-relaxed">
                     {scholar.quote}
                   </p>
 
-                  <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-gray-50">
-                    <span className="inline-flex items-center gap-1.5 text-[11px] text-[#735c00] font-medium">
-                      <span className="material-symbols-outlined text-[15px]">
-                        {scholar.id === 'pythagore'
-                          ? 'headphones'
-                          : scholar.id === 'socrate'
-                          ? 'psychology'
-                          : scholar.id === 'curie'
-                          ? 'biotech'
-                          : 'record_voice_over'}
+                  <div className="text-[11px] text-[#735c00] font-medium mb-2 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">record_voice_over</span>
+                    <span>{scholar.voiceGenderLabel}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100">
+                    <div className="flex items-center gap-1.5 text-[11px] text-[#735c00] font-semibold">
+                      <span className="material-symbols-outlined text-[15px] animate-pulse">
+                        chat
                       </span>
-                      {scholar.statusText}
-                    </span>
+                      <span>Ouvrir le Chat Écrit & Oral</span>
+                    </div>
 
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           playHapticSound();
                           onViewManuscript(scholar);
                         }}
-                        className="w-9 h-9 rounded-full bg-[#edeeef] text-[#191c1d] hover:bg-[#e7e8e9] flex items-center justify-center transition-colors focus:outline-none"
+                        className="w-8 h-8 rounded-full bg-[#edeeef] text-[#191c1d] hover:bg-[#e7e8e9] flex items-center justify-center transition-colors focus:outline-none"
                         title="Consulter le manuscrit & théorèmes"
                       >
-                        <span className="material-symbols-outlined text-[18px]">
+                        <span className="material-symbols-outlined text-[16px]">
                           {scholar.id === 'pythagore'
                             ? 'music_note'
                             : scholar.id === 'socrate'
@@ -342,15 +369,16 @@ export const PantheonView: React.FC<PantheonViewProps> = ({
                       </button>
 
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           playHarmonicChime(440, 0.3);
                           onOpenSalon(scholar.id);
                         }}
-                        className="px-3.5 py-1.5 rounded-full bg-black hover:bg-gray-800 text-[#ffe088] flex items-center gap-1.5 shadow-sm active:scale-95 transition-transform focus:outline-none"
+                        className="px-3.5 py-1.5 rounded-full bg-black hover:bg-[#1c2541] text-[#ffe088] group-hover:bg-[#111a36] flex items-center gap-1.5 shadow-sm active:scale-95 transition-all focus:outline-none"
                       >
-                        <span className="material-symbols-outlined text-[16px]">call</span>
-                        <span className="font-sans text-[12px] font-semibold">
-                          {scholar.id === 'socrate' ? 'Débattre' : 'Parler'}
+                        <span className="material-symbols-outlined text-[15px]">record_voice_over</span>
+                        <span className="font-sans text-[11px] sm:text-[12px] font-semibold">
+                          Discuter
                         </span>
                       </button>
                     </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ScreenType, ScholarId, Scholar, AudioMemo, StudentVocalNote } from './types';
 import { SCHOLARS } from './data/scholars';
 import { INITIAL_AUDIO_MEMOS, INITIAL_STUDENT_NOTES } from './data/codexData';
@@ -42,8 +42,72 @@ export default function App() {
     setCurrentScreen('salon-vocal');
   };
 
-  // Save teaching directly to Codex
-  const handleSaveToCodex = (title: string, text: string, scholarId: ScholarId) => {
+  // Load persisted memos and notes from Cloud SQL PostgreSQL
+  useEffect(() => {
+    async function loadCodexData() {
+      try {
+        const [memosRes, notesRes] = await Promise.all([
+          fetch('/api/codex/memos'),
+          fetch('/api/codex/notes')
+        ]);
+        if (memosRes.ok) {
+          const dbMemos = await memosRes.json();
+          if (Array.isArray(dbMemos) && dbMemos.length > 0) {
+            const mappedMemos: AudioMemo[] = dbMemos.map((m: any) => {
+              const targetScholar = SCHOLARS.find(s => s.id === m.scholarId) || SCHOLARS[0];
+              return {
+                id: `memo-${m.id}`,
+                scholarId: m.scholarId as ScholarId,
+                scholarName: m.scholarName,
+                scholarAvatar: targetScholar.avatarUrl,
+                category: m.category,
+                topic: m.topic,
+                title: m.title,
+                quoteExcerpt: m.quoteExcerpt,
+                duration: m.duration || '02:15',
+                currentProgress: '00:00',
+                recordedDate: m.createdAt ? new Date(m.createdAt).toLocaleDateString('fr-FR') : 'Récemment',
+                tag: m.tag || 'Archivé au Salon',
+                audioPlayedPercent: 0
+              };
+            });
+            setMemos(prev => {
+              const existingIds = new Set(prev.map(p => p.id));
+              const newUnique = mappedMemos.filter(item => !existingIds.has(item.id));
+              return [...newUnique, ...prev];
+            });
+          }
+        }
+        if (notesRes.ok) {
+          const dbNotes = await notesRes.json();
+          if (Array.isArray(dbNotes) && dbNotes.length > 0) {
+            const mappedNotes: StudentVocalNote[] = dbNotes.map((n: any) => ({
+              id: `note-${n.id}`,
+              title: n.title,
+              timestamp: n.createdAt ? new Date(n.createdAt).toLocaleDateString('fr-FR') : 'Récemment',
+              duration: n.duration || '01:30',
+              studentTranscript: n.studentTranscript,
+              feedbackScholarId: n.feedbackScholarId as ScholarId,
+              feedbackScholarName: n.feedbackScholarName,
+              feedbackStatus: n.feedbackStatus as 'Validé' | 'En débat',
+              feedbackText: n.feedbackText
+            }));
+            setStudentNotes(prev => {
+              const existingIds = new Set(prev.map(p => p.id));
+              const newUnique = mappedNotes.filter(item => !existingIds.has(item.id));
+              return [...newUnique, ...prev];
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load codex data from Cloud SQL:', err);
+      }
+    }
+    loadCodexData();
+  }, []);
+
+  // Save teaching directly to Codex & Cloud SQL PostgreSQL
+  const handleSaveToCodex = async (title: string, text: string, scholarId: ScholarId) => {
     const targetScholar = SCHOLARS.find(s => s.id === scholarId) || SCHOLARS[0];
     const newMemo: AudioMemo = {
       id: `memo-${Date.now()}`,
@@ -61,11 +125,50 @@ export default function App() {
       audioPlayedPercent: 0
     };
     setMemos(prev => [newMemo, ...prev]);
+
+    // Persist to Cloud SQL
+    try {
+      await fetch('/api/codex/memos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scholarId,
+          scholarName: targetScholar.name,
+          category: newMemo.category,
+          topic: newMemo.topic,
+          title: newMemo.title,
+          quoteExcerpt: newMemo.quoteExcerpt,
+          duration: newMemo.duration,
+          tag: newMemo.tag
+        })
+      });
+    } catch (err) {
+      console.error('Error persisting memo to Cloud SQL:', err);
+    }
   };
 
-  // Add new vocal student note
-  const handleAddStudentNote = (note: StudentVocalNote) => {
+  // Add new vocal student note & persist to Cloud SQL
+  const handleAddStudentNote = async (note: StudentVocalNote) => {
     setStudentNotes(prev => [note, ...prev]);
+
+    // Persist to Cloud SQL
+    try {
+      await fetch('/api/codex/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: note.title,
+          duration: note.duration,
+          studentTranscript: note.studentTranscript,
+          feedbackScholarId: note.feedbackScholarId,
+          feedbackScholarName: note.feedbackScholarName,
+          feedbackStatus: note.feedbackStatus,
+          feedbackText: note.feedbackText
+        })
+      });
+    } catch (err) {
+      console.error('Error persisting note to Cloud SQL:', err);
+    }
   };
 
   return (
@@ -102,6 +205,7 @@ export default function App() {
             onOpenImmersive={handleStartCall}
             onSaveToCodex={handleSaveToCodex}
             onOpenBlackboard={() => setIsBlackboardOpen(true)}
+            onBack={() => setCurrentScreen('pantheon')}
             initialPrompt={salonInitialPrompt}
           />
         )}

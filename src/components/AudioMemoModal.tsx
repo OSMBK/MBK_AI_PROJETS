@@ -69,9 +69,12 @@ export const AudioMemoModal: React.FC<AudioMemoModalProps> = ({
     } else if (selectedScholarId === 'socrate') {
       feedbackStatus = 'En débat';
       feedbackText = `Mais que nommez-vous le vide, mon ami ? Ce qui ne contient rien, ou ce qui attend d'être défini par l'esprit ? Poursuivons.`;
-    } else {
+    } else if (selectedScholarId === 'curie') {
       feedbackStatus = 'À creuser';
       feedbackText = `L'hypothèse mérite une contre-épreuve minutieuse au laboratoire avec des sels d'urane. Mesurez l'ionisation avec soin.`;
+    } else {
+      feedbackStatus = 'Validé';
+      feedbackText = `Excellente déduction géométrique. La vérité réside dans l'exacte proportion des sections coniques. Poursuivez votre contemplation.`;
     }
 
     const newNote: StudentVocalNote = {

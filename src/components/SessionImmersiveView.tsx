@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Scholar, ScholarId } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { ScholarId } from '../types';
 import { SCHOLARS, APP_ASSETS } from '../data/scholars';
-import { playHarmonicChime, playHapticSound, speakText, stopSpeaking } from '../utils/audio';
+import { playHarmonicChime, playHapticSound, speakScholarResponse, stopSpeaking } from '../utils/audio';
+import { startLiveVoiceSession, LiveSessionController } from '../utils/liveAudioStream';
 
 interface SessionImmersiveViewProps {
   scholarId: ScholarId;
@@ -14,7 +15,7 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
   onBack,
   onOpenBlackboard
 }) => {
-  const scholar = SCHOLARS.find(s => s.id === scholarId) || SCHOLARS[1]; // default to Pythagoras
+  const scholar = SCHOLARS.find(s => s.id === scholarId) || SCHOLARS[1];
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
@@ -24,34 +25,126 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
   const [transcriptionIndex, setTranscriptionIndex] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(true);
 
-  // Dynamic philosophical affirmations
-  const pythagorasQuotes = [
-    "« N'oublie point que dans tout triangle rectangle, l'harmonie des côtés révèle le secret même du cosmos... Écoute le nombre. »",
-    "« Tout est arrangé d'après les nombres. La monade engendre la dyade, et de celle-ci naît l'harmonie des sphères célestes. »",
-    "« La mesure de l'hypoténuse n'est point un accident terrestre, mais l'écho géométrique d'un accord parfait dans la lyre divine. »",
-    "« Parle sans crainte, voyageur de l'esprit. Quel polygone trouble la sérénité de ta réflexion ? »"
-  ];
+  // Live API States
+  const [isLiveApiActive, setIsLiveApiActive] = useState(false);
+  const [liveAudioLevel, setLiveAudioLevel] = useState(0);
+  const [liveTranscript, setLiveTranscript] = useState<string>('');
+  const [liveStatusText, setLiveStatusText] = useState<string>('Liaison prête');
+  const liveControllerRef = useRef<LiveSessionController | null>(null);
 
-  const currentQuote = pythagorasQuotes[transcriptionIndex];
+  const scholarQuotes: Record<string, string[]> = {
+    pythagore: [
+      "« N'oublie point que dans tout triangle rectangle, l'harmonie des côtés révèle le secret même du cosmos... Écoute le nombre. »",
+      "« Tout est arrangé d'après les nombres. La monade engendre la dyade, et de celle-ci naît l'harmonie des sphères célestes. »",
+      "« La mesure de l'hypoténuse n'est point un accident terrestre, mais l'écho géométrique d'un accord parfait dans la lyre divine. »",
+      "« Parle sans crainte, voyageur de l'esprit. Quel polygone trouble la sérénité de ta réflexion ? »"
+    ],
+    newton: [
+      "« La gravitation universelle gouverne chaque masse, du sommet du pommier jusqu'aux orbites les plus reculées des planètes. »",
+      "« Les hypothèses ne doivent point avoir de lieu en philosophie expérimentale : observez d'abord la règle et la mesure. »",
+      "« Si la distance double, l'attraction est divisée par quatre : c'est la loi en carré inverse. »"
+    ],
+    socrate: [
+      "« Tout ce que je sais, c'est que je ne sais rien. Mais ce rien fonde l'examen méthodique de ton âme. »",
+      "« Ne crains point d'avouer ton ignorance : elle est la première étincelle de la véritable sagesse. »",
+      "« Accouche de ta pensée avec sincérité : la vérité ne s'impose point, elle s'élucide ensemble. »"
+    ],
+    curie: [
+      "« Rien dans la vie n'est à craindre, tout est à comprendre. Il est temps de comprendre plus, pour craindre moins. »",
+      "« La curiosité scientifique demande patience et désintéressement. Chaque atome cache une immense énergie. »",
+      "« Dans notre hangar de fortune, nous avons appris la ténacité minérale devant l'inconnu. »"
+    ],
+    hypatie: [
+      "« Préservez toujours votre liberté de penser : penser même de travers vaut infiniment mieux que ne point penser du tout. »",
+      "« Les coniques d'Apollonius tracent la silhouette même de la lumière et du cosmos. »",
+      "« Nulle obscurité ne résiste à la rigueur de l'examen géométrique et à la lumière de la raison. »"
+    ]
+  };
 
-  // Auto-speak initial quote on entering session
+  const currentQuotesList = scholarQuotes[scholar.id] || scholarQuotes.pythagore;
+  const currentQuote = currentQuotesList[transcriptionIndex % currentQuotesList.length];
+
+  // Auto-speak initial quote in classical mode
   useEffect(() => {
-    playHarmonicChime(432, 0.6);
-    speakText(currentQuote, {
-      rate: speedIndex === 0 ? 0.8 : speedIndex === 1 ? 0.95 : 1.2,
-      onStart: () => setIsSpeaking(true),
-      onEnd: () => setIsSpeaking(false)
-    });
+    if (!isLiveApiActive) {
+      playHarmonicChime(432, 0.6);
+      speakScholarResponse(scholar.id, currentQuote, {
+        onStart: () => setIsSpeaking(true),
+        onEnd: () => setIsSpeaking(false)
+      });
+    }
 
     return () => {
       stopSpeaking();
     };
-  }, [transcriptionIndex, speedIndex]);
+  }, [scholar.id, transcriptionIndex, speedIndex, isLiveApiActive]);
+
+  // Clean up Live API on unmount
+  useEffect(() => {
+    return () => {
+      if (liveControllerRef.current) {
+        liveControllerRef.current.disconnect();
+      }
+    };
+  }, []);
+
+  const handleToggleLiveApi = () => {
+    playHapticSound();
+    if (isLiveApiActive) {
+      // Disconnect Live API
+      if (liveControllerRef.current) {
+        liveControllerRef.current.disconnect();
+        liveControllerRef.current = null;
+      }
+      setIsLiveApiActive(false);
+      setLiveStatusText('Mode Live API désactivé');
+    } else {
+      // Connect to gemini-3.8-live
+      stopSpeaking();
+      playHarmonicChime(580, 0.4);
+      setIsLiveApiActive(true);
+      setLiveStatusText('Connexion au modèle gemini-3.8-live...');
+
+      liveControllerRef.current = startLiveVoiceSession({
+        scholarId: scholar.id,
+        onConnected: (info) => {
+          setLiveStatusText(`En direct avec ${info.scholar} (Voix Live : ${info.voice})`);
+          setLiveTranscript(`« Je vous écoute en direct, jeune disciple. Parlez-moi à voix haute. »`);
+        },
+        onModelSpeechStart: () => {
+          setIsSpeaking(true);
+        },
+        onModelTextChunk: (chunk) => {
+          setLiveTranscript(prev => prev + chunk);
+        },
+        onModelInterrupted: () => {
+          setIsSpeaking(false);
+          setLiveStatusText('Interruption détectée • Écoute du disciple...');
+        },
+        onAudioLevel: (level) => {
+          setLiveAudioLevel(level);
+        },
+        onError: (err) => {
+          setLiveStatusText(`Erreur Live API : ${err}`);
+          setIsLiveApiActive(false);
+        },
+        onClose: () => {
+          setIsLiveApiActive(false);
+          setLiveStatusText('Liaison Live terminée');
+        }
+      });
+    }
+  };
 
   const handleInterrupt = () => {
     playHarmonicChime(528, 0.4);
-    stopSpeaking();
-    setTranscriptionIndex(prev => (prev + 1) % pythagorasQuotes.length);
+    if (isLiveApiActive) {
+      // In Live API mode, let model know
+      setLiveStatusText('Interruption envoyée...');
+    } else {
+      stopSpeaking();
+      setTranscriptionIndex(prev => (prev + 1) % currentQuotesList.length);
+    }
   };
 
   const handleToggleMute = () => {
@@ -66,6 +159,10 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
 
   const handleHangup = () => {
     playHarmonicChime(320, 0.3);
+    if (liveControllerRef.current) {
+      liveControllerRef.current.disconnect();
+      liveControllerRef.current = null;
+    }
     stopSpeaking();
     onBack();
   };
@@ -93,22 +190,22 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
             </h1>
           </div>
 
-          <div className="flex items-center gap-1">
+          {/* Live API Mode Toggle Button */}
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                playHapticSound();
-                if (navigator.share) {
-                  navigator.share({
-                    title: 'Agora Savoirs - Session Immersive',
-                    text: `Je dialogue en direct avec ${scholar.name} sur l'Agora des Siècles.`
-                  }).catch(() => {});
-                }
-              }}
-              className="w-10 h-10 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors focus:outline-none"
+              onClick={handleToggleLiveApi}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all active:scale-95 shadow-lg ${
+                isLiveApiActive
+                  ? 'bg-red-600 text-white border-red-400 animate-pulse'
+                  : 'bg-white/10 hover:bg-white/20 text-[#ffe088] border-white/20'
+              }`}
+              title="Basculer vers le modèle gemini-3.8-live en streaming temps réel"
             >
-              <span className="material-symbols-outlined text-[20px]">share</span>
+              <span className="w-2 h-2 rounded-full bg-red-400 animate-ping"></span>
+              <span>{isLiveApiActive ? 'LIVE API : ACTIF' : 'Activer Live API (3.8-live)'}</span>
             </button>
-            <div className="w-10 h-10 flex items-center justify-center rounded-full">
+
+            <div className="w-9 h-9 rounded-full flex items-center justify-center">
               <img
                 src={APP_ASSETS.profile}
                 alt="Profile"
@@ -139,29 +236,30 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
         {/* Top Harmonic Signal Info */}
         <div className="relative z-10 flex items-center justify-between gap-2 pt-2">
           <div className="flex items-center gap-2 bg-[#111a36]/80 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-[#fed65b] animate-pulse"></span>
+            <span className={`w-2 h-2 rounded-full ${isLiveApiActive ? 'bg-red-500 animate-ping' : 'bg-[#fed65b] animate-pulse'}`}></span>
             <span className="font-sans text-[10px] sm:text-[11px] text-[#ffe088] font-bold tracking-wider uppercase">
-              Liaison Harmonique
+              {isLiveApiActive ? 'Flux Live API gemini-3.8-live' : 'Liaison Harmonique'}
             </span>
             <span className="text-white/30 text-[10px]">|</span>
             <span className="font-sans text-[11px] text-white/80 flex items-center gap-1">
               <span className="material-symbols-outlined text-[13px] text-[#ffe088]">bolt</span>
-              35 ms
+              {isLiveApiActive ? 'Temps Réel' : '35 ms'}
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleCycleSpeed}
-              id="btn-speed"
-              className="px-3 py-1 rounded-full bg-[#111a36]/80 backdrop-blur-md text-[#ffe088] border border-white/10 text-[12px] font-semibold hover:bg-white/10 transition-colors shadow-sm focus:outline-none"
-            >
-              {speeds[speedIndex]}
-            </button>
-            <div className="px-3 py-1 rounded-full bg-[#111a36]/80 backdrop-blur-md text-[11px] text-white/70 border border-white/10 flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px] text-[#fed65b]">auto_stories</span>
-              <span>{scholar.location}</span>
+            <div className="px-3 py-1 rounded-full bg-[#111a36]/80 backdrop-blur-md text-[11px] font-semibold text-[#ffe088] border border-white/10 flex items-center gap-1">
+              <span>{scholar.gender === 'female' ? '♀ Voix Féminine' : '♂ Voix Masculine'}</span>
             </div>
+            {!isLiveApiActive && (
+              <button
+                onClick={handleCycleSpeed}
+                id="btn-speed"
+                className="px-3 py-1 rounded-full bg-[#111a36]/80 backdrop-blur-md text-[#ffe088] border border-white/10 text-[12px] font-semibold hover:bg-white/10 transition-colors shadow-sm focus:outline-none"
+              >
+                {speeds[speedIndex]}
+              </button>
+            )}
           </div>
         </div>
 
@@ -169,11 +267,19 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
         <div className="relative z-10 flex flex-col items-center justify-center my-auto py-4">
           <div className="relative flex items-center justify-center w-60 h-60 sm:w-72 sm:h-72">
             {/* Ambient pulse */}
-            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-[#fed65b]/20 to-[#735c00]/20 blur-xl animate-pulse"></div>
+            <div
+              className={`absolute inset-0 rounded-full blur-xl transition-all duration-300 ${
+                isLiveApiActive
+                  ? 'bg-gradient-to-tr from-red-500/30 to-[#fed65b]/30 scale-110'
+                  : 'bg-gradient-to-tr from-[#fed65b]/20 to-[#735c00]/20'
+              }`}
+            ></div>
 
             {/* Rotating Sacred Rings */}
             <svg
-              className="absolute inset-0 w-full h-full animate-[spin_32s_linear_infinite]"
+              className={`absolute inset-0 w-full h-full ${
+                isSpeaking ? 'animate-[spin_18s_linear_infinite]' : 'animate-[spin_32s_linear_infinite]'
+              }`}
               viewBox="0 0 260 260"
             >
               <circle
@@ -181,7 +287,7 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
                 cy="130"
                 fill="none"
                 r="120"
-                stroke="#fed65b"
+                stroke={isLiveApiActive ? '#ff6b6b' : '#fed65b'}
                 strokeDasharray="8 6"
                 strokeOpacity="0.35"
                 strokeWidth="2"
@@ -209,23 +315,23 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
               </div>
             </div>
 
-            {/* Radiant acoustic particles */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-56 h-56 rounded-full flex items-center justify-between px-1 opacity-75">
-                <span className="w-1 h-6 bg-[#ffe088] rounded-full animate-[ping_1.8s_cubic-bezier(0,0,0.2,1)_infinite]"></span>
-                <span className="w-1 h-9 bg-[#fed65b] rounded-full animate-[ping_2.3s_cubic-bezier(0,0,0.2,1)_infinite]"></span>
-                <span className="w-1 h-5 bg-[#e9c349] rounded-full animate-[ping_1.5s_cubic-bezier(0,0,0.2,1)_infinite]"></span>
-                <span className="w-1 h-8 bg-[#ffe088] rounded-full animate-[ping_2.1s_cubic-bezier(0,0,0.2,1)_infinite]"></span>
+            {/* Live acoustic level visualization */}
+            {isLiveApiActive && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div
+                  className="w-64 h-64 rounded-full border-2 border-[#ffe088]/40 animate-ping"
+                  style={{ transform: `scale(${1 + liveAudioLevel * 0.4})` }}
+                ></div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Scholar status & titles */}
           <div className="mt-3 flex flex-col items-center gap-1 text-center">
             <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white/10 backdrop-blur-sm border border-white/5">
-              <span className="inline-block w-2 h-2 rounded-full bg-[#ffe088] animate-ping"></span>
+              <span className={`inline-block w-2 h-2 rounded-full ${isLiveApiActive ? 'bg-red-400 animate-ping' : 'bg-[#ffe088] animate-ping'}`}></span>
               <p className="font-sans text-[11px] text-[#ffe088] font-bold tracking-wider uppercase">
-                {scholar.name.split(' ')[0]} formule sa pensée...
+                {isLiveApiActive ? liveStatusText : `${scholar.name.split(' ')[0]} formule sa pensée...`}
               </p>
             </div>
             <h2 className="font-serif text-[24px] sm:text-[28px] text-white font-semibold tracking-tight mt-1">
@@ -243,7 +349,7 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
               id="live-transcription"
               className="font-serif text-[17px] sm:text-[19px] text-white leading-relaxed italic transition-opacity duration-300"
             >
-              {currentQuote}
+              {isLiveApiActive ? (liveTranscript || "Parlez librement au microphone...") : currentQuote}
             </p>
 
             <div className="mt-3 flex items-center justify-center gap-2">
@@ -254,7 +360,7 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
                 <span className="w-0.5 h-1 bg-[#fed65b] rounded-full animate-pulse [animation-delay:360ms]"></span>
               </div>
               <span className="font-sans text-[11px] text-white/60 uppercase tracking-wider font-semibold">
-                Voix neuronale restituée
+                {isLiveApiActive ? 'Modèle gemini-3.8-live (Streaming 24kHz)' : 'Voix propre restituée'}
               </span>
             </div>
           </div>
@@ -269,7 +375,7 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px] text-[#ffe088]">square_foot</span>
               <span className="font-sans text-[11px] text-white font-bold uppercase tracking-wider">
-                Démonstration en cours : Théorème Fondateur
+                Démonstration en cours : {scholar.theoremName || 'Théorème Fondateur'}
               </span>
             </div>
             <button
@@ -297,42 +403,10 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
                     stroke="#ffe088"
                     strokeWidth="2.5"
                   ></polygon>
-                  <rect
-                    fill="none"
-                    height="10"
-                    stroke="#ffe088"
-                    strokeWidth="1.5"
-                    width="10"
-                    x="25"
-                    y="65"
-                  ></rect>
-                  <rect
-                    fill="#fed65b"
-                    fillOpacity="0.25"
-                    height="20"
-                    stroke="#fed65b"
-                    strokeWidth="1"
-                    width="20"
-                    x="5"
-                    y="75"
-                  ></rect>
-                  <rect
-                    fill="#e9c349"
-                    fillOpacity="0.25"
-                    height="40"
-                    stroke="#e9c349"
-                    strokeWidth="1"
-                    width="20"
-                    x="5"
-                    y="35"
-                  ></rect>
-                  <polygon
-                    fill="#ffe088"
-                    fillOpacity="0.3"
-                    points="25,35 75,75 99,45 49,5"
-                    stroke="#ffe088"
-                    strokeWidth="1"
-                  ></polygon>
+                  <rect fill="none" height="10" stroke="#ffe088" strokeWidth="1.5" width="10" x="25" y="65"></rect>
+                  <rect fill="#fed65b" fillOpacity="0.25" height="20" stroke="#fed65b" strokeWidth="1" width="20" x="5" y="75"></rect>
+                  <rect fill="#e9c349" fillOpacity="0.25" height="40" stroke="#e9c349" strokeWidth="1" width="20" x="5" y="35"></rect>
+                  <polygon fill="#ffe088" fillOpacity="0.3" points="25,35 75,75 99,45 49,5" stroke="#ffe088" strokeWidth="1"></polygon>
                 </svg>
               </div>
 
@@ -341,7 +415,7 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
                   {scholar.theoremFormula || 'a² + b² = c²'}
                 </p>
                 <p className="font-sans text-[12px] text-white/80 leading-relaxed line-clamp-2">
-                  Les carrés érigés sur la base et la hauteur comblent exactement la superficie de l'hypoténuse céleste.
+                  La mesure des principes mathématiques soutient l'équilibre du monde sensible et céleste.
                 </p>
               </div>
             </div>
@@ -392,32 +466,41 @@ export const SessionImmersiveView: React.FC<SessionImmersiveViewProps> = ({
                 onClick={handleInterrupt}
                 id="btn-speak"
                 aria-label="Prendre la parole"
-                className="relative group w-16 h-16 rounded-full bg-[#fed65b] text-[#241a00] shadow-[0_8px_28px_rgba(254,214,91,0.45)] flex items-center justify-center transition-transform hover:scale-105 active:scale-90 focus:outline-none"
+                className={`relative group w-16 h-16 rounded-full shadow-[0_8px_28px_rgba(254,214,91,0.45)] flex items-center justify-center transition-transform hover:scale-105 active:scale-90 focus:outline-none ${
+                  isLiveApiActive
+                    ? 'bg-red-500 text-white shadow-red-500/40'
+                    : 'bg-[#fed65b] text-[#241a00]'
+                }`}
               >
                 <span className="absolute inset-0 rounded-full bg-[#ffe088] animate-ping opacity-40"></span>
                 <span className="material-symbols-outlined text-[32px] relative z-10 font-bold">
-                  graphic_eq
+                  {isLiveApiActive ? 'mic' : 'graphic_eq'}
                 </span>
               </button>
               <span className="font-sans text-[11px] text-[#ffe088] font-bold tracking-wide">
-                Interrompre
+                {isLiveApiActive ? 'Parler en Direct' : 'Interrompre'}
               </span>
             </div>
 
-            {/* Action 4: Nuance (timbre / harmonic adjust) */}
+            {/* Action 4: Live API Mode */}
             <div className="flex flex-col items-center gap-1">
               <button
-                onClick={() => {
-                  playHarmonicChime(580, 0.2);
-                  handleCycleSpeed();
-                }}
+                onClick={handleToggleLiveApi}
                 id="btn-tune"
-                aria-label="Paramètres de l'harmonie vocale"
-                className="w-12 h-12 rounded-full bg-[#111a36] hover:bg-[#1c2541] text-white border border-white/10 flex items-center justify-center transition-all active:scale-95 shadow-lg focus:outline-none"
+                aria-label="Basculer Live API"
+                className={`w-12 h-12 rounded-full border transition-all active:scale-95 shadow-lg focus:outline-none ${
+                  isLiveApiActive
+                    ? 'bg-red-600 text-white border-red-400'
+                    : 'bg-[#111a36] hover:bg-[#1c2541] text-white border-white/10'
+                }`}
               >
-                <span className="material-symbols-outlined text-[22px]">tune</span>
+                <span className="material-symbols-outlined text-[22px]">
+                  {isLiveApiActive ? 'sensors' : 'sensors_off'}
+                </span>
               </button>
-              <span className="font-sans text-[10px] text-white/70">Nuance</span>
+              <span className="font-sans text-[10px] text-white/70">
+                {isLiveApiActive ? 'Live ON' : 'Live API'}
+              </span>
             </div>
 
             {/* Action 5: Congédier (Hang up) */}
